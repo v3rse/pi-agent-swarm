@@ -100,6 +100,24 @@ The bundled agents ship with **no `model`/`thinking` frontmatter** — so by def
 
 > The bundled `visual-tester` and `researcher` agents declare the optional `chrome-cdp`/`deep-research` skills in their frontmatter (`skill: …`). If a skill isn't installed the agent still works (it falls back to generic tool use) — nothing hard-codes a machine-specific path.
 
+#### Installing the optional skills
+
+The `visual-tester` and `researcher` agents are most useful with two optional skills. Agent-frontmatter skills are loaded by name when present and skipped when not — the agents function either way.
+
+```bash
+# Visual QA (used by the visual-tester agent)
+npx skills add pasky/chrome-cdp-skill --skill chrome-cdp -g
+
+# Deep multi-source research (used by the researcher agent)
+npx skills add deep-research -g
+```
+
+To confirm a skill is installed:
+
+```bash
+ls ~/.pi/agent/skills/$(npx skills list 2>/dev/null | grep -oE 'chrome-cdp|deep-research' | head -1) 2>/dev/null
+```
+
 #### Overriding models in one place (`subagents.agentOverrides`)
 
 In any `settings.json` (global `~/.pi/agent/settings.json` **or** project `.pi/settings.json`), set a per-agent `model`/`thinking`:
