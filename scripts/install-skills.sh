@@ -4,21 +4,14 @@
 #   npm run skills:install
 #
 # Installs:
-#   1. deep-research  — vendored in this repo (dependency-free, agent-native)
-#   2. chrome-cdp     — MIT, via the skills CLI (best-effort / optional)
+#   chrome-cdp     — MIT, via the skills CLI (best-effort / optional)
+#
+# The deep-research skill is bundled in the package and installed automatically
+# by `pi install` — do NOT copy it here (that creates a duplicate).
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/skills"
-DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}/skills"
+echo "→ installing chrome-cdp via the skills CLI"
 
-echo "→ installing to $DEST"
-
-# 1. deep-research (published in-repo; no external API key)
-mkdir -p "$DEST/deep-research"
-cp "$SRC/deep-research/SKILL.md" "$DEST/deep-research/SKILL.md"
-echo "  ✓ deep-research → $DEST/deep-research/SKILL.md"
-
-# 2. chrome-cdp (optional; MIT)
 if command -v npx >/dev/null 2>&1; then
   if npx --yes skills add pasky/chrome-cdp-skill --skill chrome-cdp -g; then
     echo "  ✓ chrome-cdp installed"

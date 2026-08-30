@@ -110,7 +110,7 @@ The `visual-tester` and `researcher` agents are most useful with two optional sk
 - **chrome-cdp** is a third-party MIT skill (`pasky/chrome-cdp-skill`); install it on demand:
 
 ```bash
-npm run skills:install   # installs chrome-cdp (and re-copies deep-research if you run outside pi)
+npm run skills:install   # installs chrome-cdp only (deep-research comes from `pi install`)
 ```
 
 or equivalently:
