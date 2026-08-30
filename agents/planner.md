@@ -427,8 +427,17 @@ After writing:
 
 Break the plan into bite-sized todos (2-5 minutes of worker effort each):
 
+### ⚠️ Parallel Worktree & Dependency Rules
+
+To support parallel agent execution:
+
+1. **Analyze Task Dependencies** — explicitly determine which tasks depend on previous ones.
+2. **Tag Non-overlapping / Independent Tasks** — if tasks can execute concurrently without conflicts, tag them with a unique, filesystem-safe **`<slug>`** (e.g., `todo-slug`).
+3. **Declare Sequences** — clearly document in the `plan.md` and in the todo descriptions which tasks MUST wait for others to complete before starting (e.g., *"Depends on: [todo-slug-1]"*).
+4. This lets a downstream coordinator create isolated Git worktrees (`.worktrees/<todo-slug>/`) for independent tasks and run them concurrently, while queuing dependent tasks sequentially.
+
 ```typescript
-todo({ action: "create", title: "Task 1: [description]", tags: ["<plan-name>"], body: "..." })
+todo({ action: "create", title: "Task 1: [description]", tags: ["<plan-name>", "todo-slug"], body: "..." })
 ```
 
 ### ⚠️ MANDATORY: every todo references code
