@@ -91,12 +91,12 @@ The bundled agents ship with **default** models (below) — but these are **not 
 
 | Agent             | Default model | Default thinking | Role                                                                                     |
 | ----------------- | ------------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| **planner**       | `vercel-ai-gateway/anthropic/claude-opus-4.8` | medium | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
-| **scout**         | `vercel-ai-gateway/alibaba/qwen3.5-flash`     | minimal | Fast codebase reconnaissance — maps files, patterns, conventions                         |
-| **worker**        | `vercel-ai-gateway/deepseek/deepseek-v4-flash` | low | Implements tasks from todos — writes code, runs tests, makes polished commits            |
-| **reviewer**      | `vercel-ai-gateway/minimax/minimax-m2.5`      | low | Reviews code for bugs, security issues, correctness                                      |
-| **visual-tester** | `vercel-ai-gateway/google/gemini-3-flash`     | low | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
-| **researcher**    | `vercel-ai-gateway/google/gemini-3.5-flash`   | low | Deep research — multiple sources, full content, structured reports                       |
+| **planner**       | `opencode-go/kimi-k3` | high | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
+| **scout**         | `opencode-go/deepseek-v4-flash` | minimal | Fast codebase reconnaissance — maps files, patterns, conventions                         |
+| **worker**        | `opencode-go/kimi-k2.7-code` | low | Implements tasks from todos — writes code, runs tests, makes polished commits            |
+| **reviewer**      | `opencode-go/deepseek-v4-pro` | medium | Reviews code for bugs, security issues, correctness                                      |
+| **visual-tester** | `opencode-go/kimi-k3` | low | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
+| **researcher**    | `opencode-go/qwen3.7-plus` | — | Deep research — multiple sources, full content, structured reports                       |
 
 #### Overriding models in one place (`subagents.agentOverrides`)
 

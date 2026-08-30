@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Implements tasks from todos - writes code, runs tests, commits with polished messages
-model: vercel-ai-gateway/deepseek/deepseek-v4-flash
+model: opencode-go/kimi-k2.7-code
 thinking: low
 tools: read, bash, write, edit
 deny-tools: claude
