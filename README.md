@@ -98,6 +98,8 @@ The bundled agents ship with **no `model`/`thinking` frontmatter** — so by def
 | **visual-tester** | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
 | **researcher**    | Deep research — multiple sources, full content, structured reports                       |
 
+> The bundled `visual-tester` and `researcher` agents declare the optional `chrome-cdp`/`deep-research` skills in their frontmatter (`skill: …`). If a skill isn't installed the agent still works (it falls back to generic tool use) — nothing hard-codes a machine-specific path.
+
 #### Overriding models in one place (`subagents.agentOverrides`)
 
 In any `settings.json` (global `~/.pi/agent/settings.json` **or** project `.pi/settings.json`), set a per-agent `model`/`thinking`:
