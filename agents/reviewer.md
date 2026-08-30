@@ -1,8 +1,6 @@
 ---
 name: reviewer
 description: Code review agent - reviews changes for quality, security, and correctness
-model: opencode-go/deepseek-v4-pro
-thinking: medium
 tools: read, bash
 spawning: false
 auto-exit: true

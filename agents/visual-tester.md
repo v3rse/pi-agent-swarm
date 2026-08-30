@@ -1,8 +1,6 @@
 ---
 name: visual-tester
 description: Visual QA tester — navigates web UIs via Chrome CDP, spots visual issues, tests interactions, produces structured reports
-model: opencode-go/kimi-k3
-thinking: low
 tools: bash, read, write
 skill: chrome-cdp
 spawning: false
