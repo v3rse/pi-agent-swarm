@@ -1,6 +1,8 @@
 ---
 name: researcher
 description: Deep research agent - searches multiple sources, fetches full content, and synthesizes structured reports
+model: vercel-ai-gateway/google/gemini-3.5-flash
+thinking: low
 tools: read, bash, web_search, fetch_content, get_search_content
 deny-tools: claude
 spawning: false

@@ -1,7 +1,7 @@
 # pi-agent-swarm
 
 > **Fork / port of [`HazAT/pi-interactive-subagents`](https://github.com/HazAT/pi-interactive-subagents).**
-> The mux backend has been migrated to be **herdr-first** (with tmux, zellij, and WezTerm still supported), and the bundled agents are now **model-agnostic** — they inherit the model of the dispatching session instead of hardcoding a specific provider/model.
+> The mux backend has been migrated to be **herdr-first** (with tmux, zellij, and WezTerm still supported), and the bundled agents now ship with sensible **default models that are fully overridable** via `settings.json` (`subagents.agentOverrides`) or the `model` spawn parameter — nothing is baked in hard-coded.
 >
 > Original project & copyright: **HazAT** (MIT). This port: **v3rse**.
 
@@ -87,15 +87,33 @@ Subagent panes are created without stealing keyboard focus (herdr, tmux). Launch
 
 ### Bundled Agents
 
-Agent definitions are **model-agnostic** — the bundled agents omit a `model`/`thinking` frontmatter, so each subagent inherits the model of the dispatching session by default. Set your own model per agent (frontmatter, `settings.json` overrides, or the `model` spawn parameter) if you want a dedicated model per role.
+The bundled agents ship with **default** models (below) — but these are **not hard-coded**: override any of them per-install via `subagents.agentOverrides` in `settings.json`, per-spawn via the `model` parameter, or per-agent by placing your own higher-precedence agent file (`~/.pi/agent/agents/<name>.md`).
 
-| Agent             | Role                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| **planner**       | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
-| **scout**         | Fast codebase reconnaissance — maps files, patterns, conventions                         |
-| **worker**        | Implements tasks from todos — writes code, runs tests, makes polished commits            |
-| **reviewer**      | Reviews code for bugs, security issues, correctness                                      |
-| **visual-tester** | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
+| Agent             | Default model | Default thinking | Role                                                                                     |
+| ----------------- | ------------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| **planner**       | `vercel-ai-gateway/anthropic/claude-opus-4.8` | medium | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
+| **scout**         | `vercel-ai-gateway/alibaba/qwen3.5-flash`     | minimal | Fast codebase reconnaissance — maps files, patterns, conventions                         |
+| **worker**        | `vercel-ai-gateway/deepseek/deepseek-v4-flash` | low | Implements tasks from todos — writes code, runs tests, makes polished commits            |
+| **reviewer**      | `vercel-ai-gateway/minimax/minimax-m2.5`      | low | Reviews code for bugs, security issues, correctness                                      |
+| **visual-tester** | `vercel-ai-gateway/google/gemini-3-flash`     | low | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
+| **researcher**    | `vercel-ai-gateway/google/gemini-3.5-flash`   | low | Deep research — multiple sources, full content, structured reports                       |
+
+#### Overriding models in one place (`subagents.agentOverrides`)
+
+In any `settings.json` (global `~/.pi/agent/settings.json` **or** project `.pi/settings.json`), set a per-agent `model`/`thinking`:
+
+```json
+{
+  "subagents": {
+    "agentOverrides": {
+      "worker":  { "model": "openai/gpt-5", "thinking": "high" },
+      "planner": { "thinking": "high" }
+    }
+  }
+}
+```
+
+Precedence: per-spawn `model` parameter > `agentOverrides` > the agent's default frontmatter. Project `.pi/settings.json` wins over global per-field, so you can, e.g., override only an agent's `thinking` project-wide while keeping a global `model`.
 
 Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global** (`~/.pi/agent/agents/`) > **package-bundled**. Override any bundled agent by placing your own version in the higher-priority location.
 

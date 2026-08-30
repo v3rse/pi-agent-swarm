@@ -1,6 +1,8 @@
 ---
 name: scout
 description: Fast codebase reconnaissance - maps existing code, conventions, and patterns for a task
+model: vercel-ai-gateway/alibaba/qwen3.5-flash
+thinking: minimal
 tools: read, bash
 deny-tools: claude
 output: context.md

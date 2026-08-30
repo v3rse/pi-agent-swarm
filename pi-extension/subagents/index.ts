@@ -216,6 +216,72 @@ function getBundledAgentsDir(): string {
   return join(SUBAGENTS_DIR, "../../agents");
 }
 
+export interface AgentModelOverride {
+  model?: string;
+  thinking?: string;
+}
+
+export type AgentModelOverrides = Record<string, AgentModelOverride>;
+
+/**
+ * Merge per-agent model/thinking overrides from `subagents.agentOverrides` with
+ * later writers winning, field-by-field. Kept pure so the precedence is trivially
+ * testable.
+ */
+export function mergeAgentOverrides(
+  ...sources: Array<unknown>
+): AgentModelOverrides {
+  const out: AgentModelOverrides = {};
+  for (const source of sources) {
+    const overrides = source?.subagents?.agentOverrides;
+    if (!overrides || typeof overrides !== "object") continue;
+    for (const [name, cfg] of Object.entries(overrides)) {
+      if (!cfg || typeof cfg !== "object") continue;
+      const model =
+        typeof (cfg as { model?: unknown }).model === "string"
+          ? (cfg as { model: string }).model
+          : undefined;
+      const thinking =
+        typeof (cfg as { thinking?: unknown }).thinking === "string"
+          ? (cfg as { thinking: string }).thinking
+          : undefined;
+      if (model === undefined && thinking === undefined) continue;
+      out[name] = {
+        ...(out[name] ?? {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(thinking !== undefined ? { thinking } : {}),
+      };
+    }
+  }
+  return out;
+}
+
+/**
+ * Return per-agent model/thinking overrides declared under
+ * `subagents.agentOverrides` in settings.json. Global (`~/.pi/agent/settings.json`)
+ * is read first, then project (`.pi/settings.json`) so project wins field-by-field.
+ */
+export function loadAgentModelOverrides(): AgentModelOverrides {
+  const files = [
+    join(getAgentConfigDir(), "settings.json"),
+    join(process.cwd(), ".pi", "settings.json"),
+  ];
+  const parsed: unknown[] = [];
+  for (const file of files) {
+    try {
+      parsed.push(JSON.parse(readFileSync(file, "utf8")));
+    } catch {
+      // missing/malformed settings file — ignore
+    }
+  }
+  return mergeAgentOverrides(...parsed);
+}
+
+export const __agentModelOverridesTest__ = {
+  mergeAgentOverrides,
+  loadAgentModelOverrides,
+};
+
 function getFrontmatterValue(frontmatter: string, key: string): string | undefined {
   const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
   return match ? match[1].trim() : undefined;
@@ -970,10 +1036,13 @@ async function launchSubagent(
   const id = Math.random().toString(16).slice(2, 10);
 
   const agentDefs = params.agent ? loadAgentDefaults(params.agent) : null;
-  const effectiveModel = params.model ?? agentDefs?.model;
+  const modelOverride = params.agent
+    ? loadAgentModelOverrides()[params.agent]
+    : undefined;
+  const effectiveModel = params.model ?? modelOverride?.model ?? agentDefs?.model;
   const effectiveTools = params.tools ?? agentDefs?.tools;
   const effectiveSkills = params.skills ?? agentDefs?.skills;
-  const effectiveThinking = agentDefs?.thinking;
+  const effectiveThinking = modelOverride?.thinking ?? agentDefs?.thinking;
   const effectiveInteractive = resolveEffectiveInteractive(params, agentDefs);
 
   const sessionFile = ctx.sessionManager.getSessionFile();

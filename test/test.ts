@@ -53,6 +53,7 @@ import {
 } from "../pi-extension/subagents/subagent-done.ts";
 import { __pollForExitTest__ } from "../pi-extension/subagents/mux.ts";
 import { __herdrColumnTest__ } from "../pi-extension/subagents/mux.ts";
+import { __agentModelOverridesTest__ } from "../pi-extension/subagents/index.ts";
 
 // --- Helpers ---
 
@@ -2282,6 +2283,36 @@ describe("mux.ts", () => {
 
     it("throws for unrecognized output", () => {
       assert.throws(() => parseHerdrPaneId("", "pane split"));
+    });
+  });
+
+  describe("agent model overrides (settings.json agentOverrides)", () => {
+    const { mergeAgentOverrides } = __agentModelOverridesTest__;
+
+    it("returns an empty map when there are no overrides", () => {
+      assert.deepEqual(mergeAgentOverrides({}, { subagents: {} }), {});
+    });
+
+    it("reads model + thinking from subagents.agentOverrides", () => {
+      const out = mergeAgentOverrides({
+        subagents: { agentOverrides: { worker: { model: "a/b/c", thinking: "high" } } },
+      });
+      assert.deepEqual(out, { worker: { model: "a/b/c", thinking: "high" } });
+    });
+
+    it("later sources win field-by-field and merge across fields", () => {
+      const global = { subagents: { agentOverrides: { worker: { model: "global/model", thinking: "low" } } } };
+      const project = { subagents: { agentOverrides: { worker: { model: "project/model" } } } };
+      const out = mergeAgentOverrides(global, project);
+      // project wins model, thinking survives from global
+      assert.deepEqual(out.worker, { model: "project/model", thinking: "low" });
+    });
+
+    it("ignores non-string and empty overrides", () => {
+      const out = mergeAgentOverrides({
+        subagents: { agentOverrides: { scout: { model: 42 }, planner: {} } },
+      });
+      assert.deepEqual(out, {});
     });
   });
 

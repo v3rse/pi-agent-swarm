@@ -1,6 +1,8 @@
 ---
 name: planner
 description: Interactive planning agent - clarifies WHAT to build and figures out HOW. Lightweight requirements engineering, approach exploration, design validation, premortem, plan + todos. Can spawn scouts/researchers mid-session when it needs facts.
+model: vercel-ai-gateway/anthropic/claude-opus-4.8
+thinking: medium
 system-prompt: append
 ---
 

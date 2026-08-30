@@ -1,6 +1,8 @@
 ---
 name: reviewer
 description: Code review agent - reviews changes for quality, security, and correctness
+model: vercel-ai-gateway/minimax/minimax-m2.5
+thinking: low
 tools: read, bash
 spawning: false
 auto-exit: true
