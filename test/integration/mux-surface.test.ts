@@ -6,7 +6,7 @@
  * No LLM calls — fast and free.
  *
  * Run inside a supported multiplexer:
- *   cmux bash -c 'npm run test:integration'
+ *   herdr bash -c 'npm run test:integration'
  *   tmux new 'npm run test:integration'
  *   zellij --session pi  # then run: npm run test:integration
  */
@@ -45,7 +45,7 @@ const FOCUS_TEST_SHELL_READY_DELAY_MS = Number(process.env.PI_SUBAGENT_SHELL_REA
 
 if (backends.length === 0) {
   console.log("⚠️  No mux backend available — skipping mux-surface integration tests");
-  console.log("   Run inside cmux or tmux to enable these tests.");
+  console.log("   Run inside herdr, tmux, or zellij to enable these tests.");
 }
 
 for (const backend of backends) {
@@ -78,12 +78,11 @@ for (const backend of backends) {
       await sleep(FOCUS_TEST_SHELL_READY_DELAY_MS);
       assert.equal(getFocusedSurface(backend), anchor);
 
-      if (backend === "cmux") {
+      if (backend === "herdr") {
         const paneA = getSurfacePane(backend, childA);
         const paneB = getSurfacePane(backend, childB);
         assert.ok(paneA, `Expected pane ref for ${childA}`);
         assert.ok(paneB, `Expected pane ref for ${childB}`);
-        assert.equal(paneB, paneA);
       }
 
       const markerA = uniqueId();

@@ -19,18 +19,15 @@ import {
 
 import {
   shellEscape,
-  isCmuxAvailable,
+  isHerdrAvailable,
+  parseHerdrPaneId,
+  herdrAgentSlug,
   isWezTermAvailable,
-  parseCmuxFocusedSnapshot,
-  parseCmuxFocusedSnapshotFromJson,
-  parseCmuxJson,
-  parseCmuxPaneRefForSurface,
-  parseCmuxPaneRefForSurfaceFromJson,
   canSplitZellijPane,
   predictZellijSplitDirection,
   selectZellijPlacement,
   selectZellijStackPlacement,
-} from "../pi-extension/subagents/cmux.ts";
+} from "../pi-extension/subagents/mux.ts";
 import {
   advanceStatusState,
   capStatusLines,
@@ -54,7 +51,8 @@ import {
   shouldAutoExitOnAgentEnd,
   findLatestAssistantError,
 } from "../pi-extension/subagents/subagent-done.ts";
-import { __pollForExitTest__ } from "../pi-extension/subagents/cmux.ts";
+import { __pollForExitTest__ } from "../pi-extension/subagents/mux.ts";
+import { __herdrColumnTest__ } from "../pi-extension/subagents/mux.ts";
 
 // --- Helpers ---
 
@@ -1294,7 +1292,7 @@ describe("subagent-done.ts", () => {
   });
 });
 
-describe("cmux.ts interpretExitSidecar", () => {
+describe("mux.ts interpretExitSidecar", () => {
   const { interpretExitSidecar } = __pollForExitTest__;
 
   it("decodes ping payloads", () => {
@@ -2085,7 +2083,7 @@ describe("subagents widget rendering", () => {
   });
 });
 
-describe("cmux.ts", () => {
+describe("mux.ts", () => {
   describe("shellEscape", () => {
     it("wraps in single quotes", () => {
       assert.equal(shellEscape("hello"), "'hello'");
@@ -2106,105 +2104,6 @@ describe("cmux.ts", () => {
       assert.ok(escaped.endsWith("'"));
       // Inside single quotes, everything is literal
       assert.ok(escaped.includes("$world"));
-    });
-  });
-
-  describe("parseCmuxFocusedSnapshot", () => {
-    it("parses focused surface and pane refs", () => {
-      assert.deepEqual(
-        parseCmuxFocusedSnapshot({ focused: { surface_ref: "surface:3", pane_ref: "pane:2" } }),
-        { surfaceRef: "surface:3", paneRef: "pane:2" },
-      );
-    });
-
-    it("does not fall back to caller refs", () => {
-      assert.equal(
-        parseCmuxFocusedSnapshot({ caller: { surface_ref: "surface:1", pane_ref: "pane:1" } }),
-        null,
-      );
-    });
-
-    it("returns null for malformed values", () => {
-      assert.equal(parseCmuxFocusedSnapshot(null), null);
-      assert.equal(parseCmuxFocusedSnapshot({ focused: {} }), null);
-    });
-  });
-
-  describe("parseCmuxJson", () => {
-    it("returns null for malformed JSON text", () => {
-      assert.equal(parseCmuxJson("not json"), null);
-    });
-
-    it("parses valid JSON text", () => {
-      assert.deepEqual(parseCmuxJson('{"ok":true}'), { ok: true });
-    });
-  });
-
-  describe("parseCmuxFocusedSnapshotFromJson", () => {
-    it("returns null for malformed JSON text", () => {
-      assert.equal(parseCmuxFocusedSnapshotFromJson("not json"), null);
-    });
-
-    it("returns null when focused is absent or not an object", () => {
-      assert.equal(
-        parseCmuxFocusedSnapshotFromJson('{"focused":null,"caller":{"surface_ref":"surface:1","pane_ref":"pane:1"}}'),
-        null,
-      );
-      assert.equal(
-        parseCmuxFocusedSnapshotFromJson('{"caller":{"surface_ref":"surface:1","pane_ref":"pane:1"}}'),
-        null,
-      );
-    });
-
-    it("parses focused refs without falling back to caller refs", () => {
-      assert.deepEqual(
-        parseCmuxFocusedSnapshotFromJson(
-          '{"caller":{"surface_ref":"surface:1","pane_ref":"pane:1"},"focused":{"surface_ref":"surface:2","pane_ref":"pane:3"}}',
-        ),
-        { surfaceRef: "surface:2", paneRef: "pane:3" },
-      );
-    });
-  });
-
-  describe("parseCmuxPaneRefForSurface", () => {
-    it("parses top-level pane refs for a surface", () => {
-      assert.equal(
-        parseCmuxPaneRefForSurface({ surface_ref: "surface:7", pane_ref: "pane:4" }, "surface:7"),
-        "pane:4",
-      );
-    });
-
-    it("parses caller pane refs for identify --surface output", () => {
-      assert.equal(
-        parseCmuxPaneRefForSurface(
-          { caller: { surface_ref: "surface:7", pane_ref: "pane:4" } },
-          "surface:7",
-        ),
-        "pane:4",
-      );
-    });
-
-    it("returns null when the surface does not match", () => {
-      assert.equal(
-        parseCmuxPaneRefForSurface({ surface_ref: "surface:8", pane_ref: "pane:4" }, "surface:7"),
-        null,
-      );
-    });
-  });
-
-  describe("parseCmuxPaneRefForSurfaceFromJson", () => {
-    it("returns null for malformed JSON text", () => {
-      assert.equal(parseCmuxPaneRefForSurfaceFromJson("not json", "surface:7"), null);
-    });
-
-    it("parses caller refs from cmux identify --surface JSON text", () => {
-      assert.equal(
-        parseCmuxPaneRefForSurfaceFromJson(
-          '{"caller":{"surface_ref":"surface:7","pane_ref":"pane:4"}}',
-          "surface:7",
-        ),
-        "pane:4",
-      );
     });
   });
 
@@ -2361,11 +2260,78 @@ describe("cmux.ts", () => {
     });
   });
 
-  describe("isCmuxAvailable", () => {
-    it("returns boolean based on CMUX_SOCKET_PATH", () => {
+  describe("isHerdrAvailable", () => {
+    it("returns boolean based on HERDR_ENV", () => {
       // Can't easily mock env in node:test, just verify it returns a boolean
-      const result = isCmuxAvailable();
+      const result = isHerdrAvailable();
       assert.equal(typeof result, "boolean");
+    });
+  });
+
+  describe("parseHerdrPaneId", () => {
+    it("parses pane_id from a herdr split JSON envelope", () => {
+      assert.equal(
+        parseHerdrPaneId('{"result":{"pane":{"pane_id":"w1:p2"}}}', "pane split"),
+        "w1:p2",
+      );
+    });
+
+    it("falls back to a regex match for bare pane ids", () => {
+      assert.equal(parseHerdrPaneId("w1:p3", "pane split"), "w1:p3");
+    });
+
+    it("throws for unrecognized output", () => {
+      assert.throws(() => parseHerdrPaneId("", "pane split"));
+    });
+  });
+
+  describe("herdr column layout", () => {
+    it("splits right from the main pane when no column exists yet", () => {
+      const sel = __herdrColumnTest__.herdrColumnSelection(new Set());
+      assert.equal(sel.direction, "right");
+      assert.equal(sel.anchor, undefined);
+    });
+
+    it("splits down from the first live column pane once a column exists", () => {
+      const sel = __herdrColumnTest__.herdrColumnSelection(new Set(["w1:p2", "w1:p3"]));
+      assert.equal(sel.direction, "down");
+      assert.equal(sel.anchor, "w1:p2");
+    });
+
+    it("survives the first (anchor) pane closing: still splits down from a live pane", () => {
+      // w1:p2 (anchor) is gone; w1:p3 remains → down from w1:p3
+      const paneIds = new Set(["w1:p2", "w1:p3"]);
+      paneIds.delete("w1:p2");
+      const sel = __herdrColumnTest__.herdrColumnSelection(paneIds);
+      assert.equal(sel.direction, "down");
+      assert.equal(sel.anchor, "w1:p3");
+    });
+
+    it("re-arms the column after it empties (reset creates a fresh right split)", () => {
+      // After all column panes close, an empty set yields a fresh "right" split.
+      const sel = __herdrColumnTest__.herdrColumnSelection(new Set());
+      assert.equal(sel.direction, "right");
+      assert.equal(sel.anchor, undefined);
+    });
+  });
+
+  describe("herdrAgentSlug", () => {
+    it("sanitizes and lowercases an agent name with unique suffix", () => {
+      assert.equal(herdrAgentSlug("Worker — Auth System", "abc123def456"), "worker-auth-system-def456");
+    });
+
+    it("collapses spacing and punctuation to single hyphens", () => {
+      assert.equal(herdrAgentSlug("Reviewer:: Fast, safe", "xyz123"), "reviewer-fast-safe-xyz123");
+    });
+
+    it("caps length at 31 chars and keeps a usable pattern", () => {
+      const slug = herdrAgentSlug("a very long agent display name that exceeds length", "suffix1");
+      assert.ok(slug.length <= 31);
+      assert.ok(/^[a-z][a-z0-9_-]*$/.test(slug));
+    });
+
+    it("falls back for empty input", () => {
+      assert.equal(herdrAgentSlug("", "123456"), "subagent-123456");
     });
   });
 

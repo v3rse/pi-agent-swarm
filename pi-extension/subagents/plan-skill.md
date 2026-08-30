@@ -5,7 +5,7 @@ description: >
   which clarifies WHAT to build and figures out HOW, with the ability to
   spawn its own scouts/researchers mid-session. Use when asked to "plan",
   "brainstorm", "I want to build X", or "let's design". Requires the
-  subagents extension and a supported multiplexer (cmux/tmux/zellij).
+  subagents extension and a supported multiplexer (herdr/tmux/zellij).
 ---
 
 # Plan
@@ -105,6 +105,18 @@ Create todos tagged with: <name>`,
 
 When done, the user presses Ctrl+D and the plan + todos are returned to the main session.
 
+### ⚠️ YOU (the main agent) MUST NOT IMPLEMENT ANYTHING
+
+While the planner is active, you are FORBIDDEN from:
+- Writing any code
+- Editing any files
+- Running build/test commands
+- Creating files or directories related to the feature
+
+Your ONLY job while the planner runs: wait. Say "Planner is working. I'll review the plan once it's done" and end your turn.
+
+After the planner returns, proceed to Phase 4 (review), then Phase 5 (spawn workers).
+
 ### The planner may spawn its own specialists
 
 During the session, the planner can spawn:
@@ -144,6 +156,15 @@ Review with the user:
 ---
 
 ## Phase 5: Execute Todos
+
+### ⚠️ YOU MUST SPAWN WORKERS — DO NOT IMPLEMENT CODE YOURSELF
+
+You are the coordinator. You do NOT write implementation code. Your job:
+1. List todos with `todo({ action: "list" })`
+2. Spawn one worker per todo using `subagent`
+3. Wait for each worker to finish before spawning the next
+
+If you catch yourself writing code or editing files directly — STOP. That's the worker's job.
 
 Spawn workers sequentially. Each worker gets the plan path and scout context:
 

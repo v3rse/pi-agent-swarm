@@ -3,6 +3,7 @@ import { keyHint } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { dirname, join } from "node:path";
+import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   readdirSync,
@@ -27,7 +28,10 @@ import {
   renameCurrentTab,
   renameWorkspace,
   readScreen,
-} from "./cmux.ts";
+  reportSubagentState,
+  herdrAgentSlug,
+  resetHerdrColumn,
+} from "./mux.ts";
 
 import {
   findLastAssistantMessage,
@@ -76,7 +80,15 @@ const POLL_ABORT_KEY = Symbol.for("pi-subagents/poll-abort-controller");
     (globalThis as any)[STATUS_INTERVAL_KEY] = null;
   }
   const prevAbort = (globalThis as any)[POLL_ABORT_KEY] as AbortController | undefined;
-  if (prevAbort) prevAbort.abort();
+  if (prevAbort) {
+    try {
+      appendFileSync(
+        "/tmp/subagent-abort-debug.log",
+        `${new Date().toISOString()} MODULE RELOAD - aborting prev poll controller\n${new Error("reload trace").stack}\n\n`,
+      );
+    } catch {}
+    prevAbort.abort();
+  }
   (globalThis as any)[POLL_ABORT_KEY] = new AbortController();
 }
 
@@ -486,6 +498,24 @@ interface SubagentResult {
 /**
  * State for a launched (but not yet completed) subagent.
  */
+/**
+ * Map a pi subagent status kind onto herdr's lifecycle state vocabulary
+ * (working | blocked | idle | unknown) for `pane report-agent`.
+ */
+function herdrStateForKind(kind: string): "working" | "blocked" | "idle" | "unknown" {
+  switch (kind) {
+    case "starting":
+    case "active":
+    case "running":
+      return "working";
+    case "waiting":
+    case "stalled":
+      return "blocked";
+    default:
+      return "unknown";
+  }
+}
+
 interface RunningSubagent {
   id: string;
   name: string;
@@ -856,6 +886,7 @@ function startStatusRefresh(pi: ExtensionAPI) {
       const { nextState, snapshot, transition } = advanceStatusState(running.statusState, now);
       if (nextState.currentKind !== running.statusState.currentKind) {
         shouldRefreshWidget = true;
+        reportSubagentState(running.surface, herdrAgentSlug(running.name, running.id), herdrStateForKind(nextState.currentKind));
       }
       running.statusState = nextState;
 
@@ -1076,6 +1107,7 @@ async function launchSubagent(
     };
 
     runningSubagents.set(id, running);
+    reportSubagentState(surface, herdrAgentSlug(params.name, id), "working");
     return running;
   }
 
@@ -1214,6 +1246,7 @@ async function launchSubagent(
   };
 
   runningSubagents.set(id, running);
+  reportSubagentState(surface, herdrAgentSlug(params.name, id), "working");
   return running;
 }
 
@@ -1291,6 +1324,7 @@ async function watchSubagent(
         try { unlinkSync(running.sentinelFile + ".transcript"); } catch {}
       }
 
+      reportSubagentState(surface, herdrAgentSlug(running.name, running.id), "idle");
       closeSurface(surface);
       runningSubagents.delete(running.id);
 
@@ -1316,6 +1350,7 @@ async function watchSubagent(
           : "Sub-agent exited without output";
     }
 
+    reportSubagentState(surface, herdrAgentSlug(running.name, running.id), "idle");
     closeSurface(surface);
     runningSubagents.delete(running.id);
 
@@ -1330,6 +1365,12 @@ async function watchSubagent(
       ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
     };
   } catch (err: any) {
+    try {
+      appendFileSync(
+        "/tmp/subagent-abort-debug.log",
+        `${new Date().toISOString()} WATCHER ERROR name=${name} err=${err?.message} watcherSignalAborted=${signal.aborted} moduleSignalAborted=${getModuleAbortSignal().aborted}\n\n`,
+      );
+    } catch {}
     try {
       closeSurface(surface);
     } catch {}
@@ -1361,6 +1402,14 @@ export default function subagentsExtension(pi: ExtensionAPI) {
   // Capture the UI context for widget updates
   pi.on("session_start", (_event, ctx) => {
     latestCtx = ctx;
+    // A new session must not inherit the previous session's aborted poll
+    // controller. session_shutdown aborts it and the module is only reset at
+    // load time, so in a persistent process every session after the first
+    // would fail all subagent launches with "Aborted while waiting...".
+    (globalThis as any)[POLL_ABORT_KEY] = new AbortController();
+    // Drop any stale subagent column from a prior session so a fresh spawn in
+    // this session starts a new column instead of splitting down into a dead pane.
+    resetHerdrColumn();
   });
 
   // Clean up on session shutdown
@@ -1376,7 +1425,15 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       (globalThis as any)[STATUS_INTERVAL_KEY] = null;
     }
     const moduleAbort = (globalThis as any)[POLL_ABORT_KEY] as AbortController | undefined;
-    if (moduleAbort) moduleAbort.abort();
+    if (moduleAbort) {
+      try {
+        appendFileSync(
+          "/tmp/subagent-abort-debug.log",
+          `${new Date().toISOString()} SESSION SHUTDOWN - aborting module poll controller\n\n`,
+        );
+      } catch {}
+      moduleAbort.abort();
+    }
     for (const [_id, agent] of runningSubagents) {
       agent.abortController?.abort();
     }
@@ -1879,6 +1936,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
           }),
         };
         runningSubagents.set(id, running);
+        reportSubagentState(surface, herdrAgentSlug(params.name, id), "working");
         startWidgetRefresh();
         startStatusRefresh(pi);
 

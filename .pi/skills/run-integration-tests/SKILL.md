@@ -5,41 +5,41 @@ description: Run the integration test suite and verify all sessions end-to-end. 
 
 # Run Integration Tests
 
-Execute the integration test suite inside cmux, then introspect every spawned session to verify the full subagent lifecycle worked end-to-end.
+Execute the integration test suite inside herdr, then introspect every spawned session to verify the full subagent lifecycle worked end-to-end.
 
 ## Step 1: Preflight Checks
 
 Verify the environment is ready:
 
 ```bash
-echo "CMUX_SOCKET_PATH=$CMUX_SOCKET_PATH"
+if [ "${HERDR_ENV:-}" != 1 ]; then echo "not inside herdr"; else echo "HERDR_PANE_ID=$HERDR_PANE_ID"; fi
 echo "TMUX=$TMUX"
 node --version
 ```
 
-- At least one of `CMUX_SOCKET_PATH` or `TMUX` must be set
+- Must run inside herdr (`HERDR_ENV=1`) or tmux
 - Node 22+ required
 
-If neither mux is available, stop and tell the user to run inside cmux or tmux.
+If neither mux is available, stop and tell the user to run inside herdr or tmux.
 
 ## Step 2: Run Unit Tests
 
 Run the fast unit tests first — if these fail, skip integration tests:
 
 ```bash
-cd /Users/haza/Projects/pi-interactive-subagents && node --test test/test.ts
+cd $(pwd) && node --test test/test.ts
 ```
 
 All 114 unit tests must pass. If any fail, stop and fix them before proceeding.
 
 ## Step 3: Run Integration Tests
 
-Use cmux to run the integration tests in a dedicated surface so the main session stays responsive.
+Use herdr to run the integration tests in a dedicated pane so the main session stays responsive.
 
 ```bash
-SURFACE=$(cmux new-surface --type terminal | awk '{print $2}')
+SURFACE=$(herdr pane split --current --direction right --cwd $(pwd) --no-focus | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['pane']['pane_id'])")
 sleep 0.5
-cmux send --surface $SURFACE 'cd /Users/haza/Projects/pi-interactive-subagents && node --test --test-concurrency=1 test/integration/mux-surface.test.ts test/integration/subagent-lifecycle.test.ts 2>&1; echo __TESTS_DONE_$?__\n'
+herdr pane run "$SURFACE" 'cd $(pwd) && node --test --test-concurrency=1 test/integration/mux-surface.test.ts test/integration/subagent-lifecycle.test.ts 2>&1; echo __TESTS_DONE_$?__'
 ```
 
 `--test-concurrency=1` is required: the focus-preservation test asserts global mux state and would race against parallel suites.
@@ -47,16 +47,16 @@ cmux send --surface $SURFACE 'cd /Users/haza/Projects/pi-interactive-subagents &
 Poll until the sentinel appears:
 
 ```bash
-cmux read-screen --surface $SURFACE --lines 200
+herdr pane read "$SURFACE" --source recent-unwrapped --lines 200
 ```
 
 Look for `__TESTS_DONE_0__` (success) or `__TESTS_DONE_1__` (failure). Poll every 15 seconds. Timeout after 10 minutes.
 
-Once done, capture the full output and close the surface:
+Once done, capture the full output and close the pane:
 
 ```bash
-cmux read-screen --surface $SURFACE --scrollback --lines 500
-cmux close-surface --surface $SURFACE
+herdr pane read "$SURFACE" --source recent-unwrapped --lines 500
+herdr pane close "$SURFACE"
 ```
 
 ### Expected results

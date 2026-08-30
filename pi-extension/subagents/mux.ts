@@ -1,4 +1,4 @@
-import { execSync, execFile, execFileSync, spawnSync } from "node:child_process";
+import { execSync, execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
-export type MuxBackend = "cmux" | "tmux" | "zellij" | "wezterm";
+export type MuxBackend = "herdr" | "tmux" | "zellij" | "wezterm";
 
 const commandAvailability = new Map<string, boolean>();
 
@@ -43,12 +43,12 @@ function hasCommand(command: string): boolean {
 
 function muxPreference(): MuxBackend | null {
   const pref = (process.env.PI_SUBAGENT_MUX ?? "").trim().toLowerCase();
-  if (pref === "cmux" || pref === "tmux" || pref === "zellij" || pref === "wezterm") return pref;
+  if (pref === "herdr" || pref === "tmux" || pref === "zellij" || pref === "wezterm") return pref;
   return null;
 }
 
-function isCmuxRuntimeAvailable(): boolean {
-  return !!process.env.CMUX_SOCKET_PATH && hasCommand("cmux");
+function isHerdrRuntimeAvailable(): boolean {
+  return process.env.HERDR_ENV === "1" && hasCommand("herdr");
 }
 
 function isTmuxRuntimeAvailable(): boolean {
@@ -63,8 +63,8 @@ function isWezTermRuntimeAvailable(): boolean {
   return !!process.env.WEZTERM_UNIX_SOCKET && hasCommand("wezterm");
 }
 
-export function isCmuxAvailable(): boolean {
-  return isCmuxRuntimeAvailable();
+export function isHerdrAvailable(): boolean {
+  return isHerdrRuntimeAvailable();
 }
 
 export function isTmuxAvailable(): boolean {
@@ -81,12 +81,12 @@ export function isWezTermAvailable(): boolean {
 
 export function getMuxBackend(): MuxBackend | null {
   const pref = muxPreference();
-  if (pref === "cmux") return isCmuxRuntimeAvailable() ? "cmux" : null;
+  if (pref === "herdr") return isHerdrRuntimeAvailable() ? "herdr" : null;
   if (pref === "tmux") return isTmuxRuntimeAvailable() ? "tmux" : null;
   if (pref === "zellij") return isZellijRuntimeAvailable() ? "zellij" : null;
   if (pref === "wezterm") return isWezTermRuntimeAvailable() ? "wezterm" : null;
 
-  if (isCmuxRuntimeAvailable()) return "cmux";
+  if (isHerdrRuntimeAvailable()) return "herdr";
   if (isTmuxRuntimeAvailable()) return "tmux";
   if (isZellijRuntimeAvailable()) return "zellij";
   if (isWezTermRuntimeAvailable()) return "wezterm";
@@ -99,8 +99,8 @@ export function isMuxAvailable(): boolean {
 
 export function muxSetupHint(): string {
   const pref = muxPreference();
-  if (pref === "cmux") {
-    return "Start pi inside cmux (`cmux pi`).";
+  if (pref === "herdr") {
+    return "Start pi inside herdr (`herdr`, then run `pi`).";
   }
   if (pref === "tmux") {
     return "Start pi inside tmux (`tmux new -A -s pi 'pi'`).";
@@ -111,7 +111,7 @@ export function muxSetupHint(): string {
   if (pref === "wezterm") {
     return "Start pi inside WezTerm.";
   }
-  return "Start pi inside cmux (`cmux pi`), tmux (`tmux new -A -s pi 'pi'`), zellij (`zellij --session pi`, then run `pi`), or WezTerm.";
+  return "Start pi inside herdr (`herdr`, then run `pi`), tmux (`tmux new -A -s pi 'pi'`), zellij (`zellij --session pi`, then run `pi`), or WezTerm.";
 }
 
 function requireMuxBackend(): MuxBackend {
@@ -199,8 +199,63 @@ async function zellijActionAsync(args: string[], surface?: string): Promise<stri
   return stdout;
 }
 
-/** Tracked subagent pane for cmux — reused across subagent launches. */
-let cmuxSubagentPane: string | null = null;
+/** Tracked subagent pane for tmux — first subagent splits right from main, subsequent split down in that column. */
+let tmuxSubagentPane: string | null = null;
+
+/**
+ * Herdr subagent column.
+ *
+ * Mirrors the tmux column layout using herdr's native right/down splits (herdr
+ * supports only "right | down"):
+ *   - first subagent splits RIGHT from the main pane (HERDR_PANE_ID) -> the column,
+ *   - subsequent subagents split DOWN inside that column -> stacked vertically.
+ *
+ * A Set (insertion-ordered) tracks the live column panes instead of a single
+ * anchor, so the split target survives the first pane closing out of order.
+ * Module state is safe for parallel spawns: createSurface runs synchronously per
+ * spawn and each subagent tool call resolves before the next is issued, so the
+ * column is settled by the time a later spawn splits.
+ *
+ * Reset on session_start (see resetHerdrColumn) so a new session never splits
+ * down into a stale column left over from a previous session.
+ */
+let herdrColumnPanes: Set<string> = new Set();
+
+/** Record a pane as part of the herdr column (called when a column pane is created). */
+export function trackHerdrColumnPane(paneId: string): void {
+  herdrColumnPanes.add(paneId);
+}
+
+/** Forget a closed herdr column pane. When the column empties the next spawn re-creates it. */
+export function forgetHerdrColumnPane(paneId: string): void {
+  herdrColumnPanes.delete(paneId);
+}
+
+/**
+ * Clear the herdr column tracking. Called on session_start so a new session
+ * does not inherit a stale column (same class of bug as the poll-AbortController
+ * lifecycle issue) and never splits "down" into a dead pane.
+ */
+export function resetHerdrColumn(): void {
+  herdrColumnPanes = new Set();
+}
+
+/**
+ * Pure: choose the herdr split for a new subagent pane given the live column.
+ * Returns split "down" from the first live column pane when a column exists,
+ * otherwise split "right" from the main pane (anchor = `undefined`).
+ */
+export function herdrColumnSelection(
+  columnPanes: ReadonlySet<string>,
+): { direction: "right" | "down"; anchor: string | undefined } {
+  const anchor = columnPanes.values().next().value as string | undefined;
+  return anchor
+    ? { direction: "down", anchor }
+    : { direction: "right", anchor: undefined };
+}
+
+export const __herdrColumnTest__ = { herdrColumnSelection };
+
 
 // Mirrors Zellij 0.44.x tab minimums, used to predict which pane Zellij itself
 // will choose for a directionless split.
@@ -527,249 +582,127 @@ function createZellijSurface(name: string): string {
   return withZellijSurfaceLock(() => createZellijSurfaceUnlocked(name));
 }
 
-type CmuxFocusSnapshot = {
-  surfaceRef?: string;
-  paneRef?: string;
-};
 
-type CmuxCreatedSurface = {
-  surface: string;
-  paneRef?: string;
-};
-
-type CmuxIdentifySnapshot = {
-  focused: CmuxFocusSnapshot | null;
-  caller: CmuxFocusSnapshot | null;
-};
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-export function parseCmuxFocusedSnapshot(value: unknown): CmuxFocusSnapshot | null {
-  if (!value || typeof value !== "object") return null;
-
-  const focused = (value as { focused?: unknown }).focused;
-  if (!focused || typeof focused !== "object") return null;
-
-  const record = focused as { surface_ref?: unknown; pane_ref?: unknown };
-  const surfaceRef = nonEmptyString(record.surface_ref) ? record.surface_ref : undefined;
-  const paneRef = nonEmptyString(record.pane_ref) ? record.pane_ref : undefined;
-
-  if (!surfaceRef && !paneRef) return null;
-  return { surfaceRef, paneRef };
-}
-
-export function parseCmuxJson(value: string): unknown | null {
+/**
+ * Parse a herdr pane id (e.g. `w1:p2`) from a `herdr` CLI JSON response.
+ *
+ * `pane split` and `tab create` responses are JSON envelopes like
+ * `{"result": {"pane": {"pane_id": "w1:p2", ...}}}`.
+ */
+export function parseHerdrPaneId(raw: string, context: string): string {
   try {
-    return JSON.parse(value);
-  } catch (error) {
-    void error;
-    return null;
+    const parsed = JSON.parse(raw);
+    const paneId = parsed?.result?.pane?.pane_id;
+    if (typeof paneId === "string" && paneId.length > 0) return paneId;
+  } catch {
+    // fall through to regex
   }
+  const m = raw.match(/\b(?:w[\w-]+:)?p[\w-]+\b/);
+  if (m) return m[0];
+  throw new Error(`Unexpected herdr ${context} output: ${raw || "(empty)"}`);
 }
 
-export function parseCmuxFocusedSnapshotFromJson(value: string): CmuxFocusSnapshot | null {
-  return parseCmuxFocusedSnapshot(parseCmuxJson(value));
+/**
+ * True when herdr is the active mux backend AND we are running inside a herdr
+ * pane. herdr lifecycle reporting is only meaningful there.
+ */
+export function isHerdrSubagentReportingAvailable(): boolean {
+  return isHerdrRuntimeAvailable() && getMuxBackend?.() === "herdr";
 }
 
-function parseCmuxCallerSnapshot(value: unknown): CmuxFocusSnapshot | null {
-  if (!value || typeof value !== "object") return null;
-
-  const caller = (value as { caller?: unknown }).caller;
-  if (!caller || typeof caller !== "object") return null;
-
-  const record = caller as { surface_ref?: unknown; pane_ref?: unknown };
-  const surfaceRef = nonEmptyString(record.surface_ref) ? record.surface_ref : undefined;
-  const paneRef = nonEmptyString(record.pane_ref) ? record.pane_ref : undefined;
-
-  if (!surfaceRef && !paneRef) return null;
-  return { surfaceRef, paneRef };
+/**
+ * Build a herdr-safe agent slug (<=31 chars, [a-z][a-z0-9_-]{0,31}) from a
+ * subagent name + a short unique suffix, for use as `--agent <LABEL>`.
+ */
+export function herdrAgentSlug(name: string, suffix: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 25) || "subagent";
+  const tail = suffix.replace(/[^a-z0-9_-]+/g, "-").replace(/-+/g, "-").slice(-6);
+  const slug = `${base}-${tail}`.slice(0, 31);
+  return slug.replace(/-+$/g, "") || "subagent";
 }
 
-export function parseCmuxPaneRefForSurface(value: unknown, surface: string): string | null {
-  if (!value || typeof value !== "object") return null;
-
-  const record = value as { surface_ref?: unknown; pane_ref?: unknown; caller?: unknown };
-  if (record.surface_ref === surface && nonEmptyString(record.pane_ref)) return record.pane_ref;
-
-  const caller = record.caller;
-  if (!caller || typeof caller !== "object") return null;
-
-  const callerRecord = caller as { surface_ref?: unknown; pane_ref?: unknown };
-  if (callerRecord.surface_ref === surface && nonEmptyString(callerRecord.pane_ref)) {
-    return callerRecord.pane_ref;
-  }
-
-  return null;
-}
-
-export function parseCmuxPaneRefForSurfaceFromJson(value: string, surface: string): string | null {
-  return parseCmuxPaneRefForSurface(parseCmuxJson(value), surface);
-}
-
-function readCmux(args: string[]): string | null {
-  const result = spawnSync("cmux", args, { encoding: "utf8" });
-  if (result.error || result.status !== 0 || !result.stdout.trim()) return null;
-  return result.stdout;
-}
-
-function parseCmuxIdentifySnapshot(value: string | null): CmuxIdentifySnapshot {
-  const parsed = value ? parseCmuxJson(value) : null;
-  return {
-    focused: parseCmuxFocusedSnapshot(parsed),
-    caller: parseCmuxCallerSnapshot(parsed),
-  };
-}
-
-function captureCmuxIdentifySnapshot(): CmuxIdentifySnapshot {
-  return parseCmuxIdentifySnapshot(readCmux(["identify", "--json"]));
-}
-
-function captureCmuxFocusSnapshot(): CmuxFocusSnapshot | null {
-  return captureCmuxIdentifySnapshot().focused;
-}
-
-function readCmuxPaneRefForSurface(surface: string): string | null {
-  const info = readCmux(["identify", "--surface", surface]);
-  return info ? parseCmuxPaneRefForSurfaceFromJson(info, surface) : null;
-}
-
-function restoreCmuxFocusSnapshot(snapshot: CmuxFocusSnapshot | null): void {
-  if (!snapshot) return;
-
-  if (snapshot.paneRef) {
-    spawnSync("cmux", ["focus-pane", "--pane", snapshot.paneRef], { encoding: "utf8" });
-  }
-
-  if (snapshot.surfaceRef) {
-    spawnSync("cmux", ["focus-panel", "--panel", snapshot.surfaceRef], { encoding: "utf8" });
-  }
-}
-
-function waitForCmuxFocusSettle(): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
-}
-
-function cmuxFocusMatchesChild(
-  currentFocus: CmuxFocusSnapshot | null,
-  child: CmuxCreatedSurface,
-): boolean {
-  if (!currentFocus) return false;
-  if (currentFocus.surfaceRef === child.surface) return true;
-  return !!currentFocus.paneRef && currentFocus.paneRef === child.paneRef;
-}
-
-function cmuxFocusMatchesSurfaceRef(
-  currentFocus: CmuxFocusSnapshot | null,
-  surfaceRef: string | undefined,
-): boolean {
-  return !!surfaceRef && currentFocus?.surfaceRef === surfaceRef;
-}
-
-function cmuxFocusMatchesPaneRef(
-  currentFocus: CmuxFocusSnapshot | null,
-  paneRef: string | undefined,
-): boolean {
-  return !!paneRef && currentFocus?.paneRef === paneRef;
-}
-
-function restoreCmuxFocusIfLaunchSurfaceFocused(
-  snapshot: CmuxFocusSnapshot | null,
-  child: CmuxCreatedSurface,
-  options?: { sourceSurfaceRef?: string; callerSnapshot?: CmuxFocusSnapshot | null },
+/**
+ * Report a pi subagent's lifecycle state to herdr's sidebar.
+ *
+ * Safe no-op unless herdr is the active backend and we are inside herdr.
+ * All failures are swallowed: lifecycle reporting is best-effort and must
+ * never affect the subagent run.
+ */
+export function reportSubagentState(
+  surface: string,
+  slug: string,
+  state: "working" | "blocked" | "idle" | "unknown",
+  message?: string,
 ): void {
-  if (!snapshot) return;
-
-  waitForCmuxFocusSettle();
-  const currentFocus = captureCmuxFocusSnapshot();
-  if (
-    cmuxFocusMatchesChild(currentFocus, child) ||
-    cmuxFocusMatchesSurfaceRef(currentFocus, options?.sourceSurfaceRef) ||
-    cmuxFocusMatchesSurfaceRef(currentFocus, options?.callerSnapshot?.surfaceRef) ||
-    // cmux can settle focus onto another active surface in the caller pane after creating a split/surface.
-    cmuxFocusMatchesPaneRef(currentFocus, options?.callerSnapshot?.paneRef)
-  ) {
-    restoreCmuxFocusSnapshot(snapshot);
-  }
-}
-
-function parseCmuxCreatedSurface(output: string, command: string): CmuxCreatedSurface {
-  const surfaceMatch = output.match(/surface:\d+/);
-  if (!surfaceMatch) {
-    throw new Error(`Unexpected cmux ${command} output: ${output}`);
-  }
-
-  return {
-    surface: surfaceMatch[0],
-    paneRef: output.match(/pane:\d+/)?.[0],
-  };
-}
-
-function renameCmuxSurface(surface: string, name: string): void {
-  execFileSync("cmux", ["rename-tab", "--surface", surface, name], { encoding: "utf8" });
-}
-
-function createCmuxSplitSurface(
-  name: string,
-  direction: "left" | "right" | "up" | "down",
-  fromSurface?: string,
-): CmuxCreatedSurface {
-  const identifySnapshot = captureCmuxIdentifySnapshot();
-  const focusSnapshot = identifySnapshot.focused;
-  const callerSnapshot = identifySnapshot.caller;
-  let child: CmuxCreatedSurface | null = null;
-
+  if (!isHerdrSubagentReportingAvailable()) return;
   try {
-    const args = ["new-split", direction];
-    if (fromSurface) args.push("--surface", fromSurface);
-
-    const output = execFileSync("cmux", args, { encoding: "utf8" }).trim();
-    child = parseCmuxCreatedSurface(output, "new-split");
-    child.paneRef ??= readCmuxPaneRefForSurface(child.surface) ?? undefined;
-    renameCmuxSurface(child.surface, name);
-    return child;
-  } finally {
-    if (child) {
-      restoreCmuxFocusIfLaunchSurfaceFocused(focusSnapshot, child, {
-        sourceSurfaceRef: fromSurface,
-        callerSnapshot,
-      });
-    } else {
-      restoreCmuxFocusSnapshot(focusSnapshot);
-    }
+    const args = ["pane", "report-agent", surface, "--source", "pi-subagents", "--agent", slug, "--state", state];
+    if (message) args.push("--message", message);
+    execFileSync("herdr", args, { encoding: "utf8" });
+  } catch {
+    // best-effort — never throw into the subagent lifecycle
   }
 }
 
 /**
+ * Open an existing git worktree as a herdr workspace (isolation + monitoring).
+ *
+ * Best-effort: if herdr isn't the backend, or the worktree path is unknown,
+ * this is a no-op. Returns the opened workspace id when available.
+ * See https://herdr.dev/docs/cli-reference/ (worktree open).
+ */
+export function openWorktreeWorkspace(
+  repoPath: string,
+  worktreePath: string,
+  label: string,
+): string | null {
+  if (!isHerdrSubagentReportingAvailable()) return null;
+  if (!repoPath || !worktreePath) return null;
+  try {
+    const raw = execFileSync(
+      "herdr",
+      ["worktree", "open", "--cwd", repoPath, "--path", worktreePath, "--label", label, "--no-focus"],
+      { encoding: "utf8" },
+    ).trim();
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed?.result?.workspace?.workspace_id ?? null;
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+
+/**
  * Create a new terminal surface for a subagent.
  *
- * For cmux: the first call creates a right-split pane; subsequent calls add
- * tabs to that same pane (avoiding ever-narrower splits).
+ * For herdr: splits the caller's pane (HERDR_PANE_ID) to the right.
  * For zellij: chooses a tab-aware tiled or stacked placement.
  * For tmux/wezterm: falls back to split behavior.
  *
- * Returns an identifier (`surface:42` in cmux, `%12` in tmux, `pane:7` in zellij, `42` in wezterm).
+ * Returns an identifier (`w1:p2` in herdr, `%12` in tmux, `pane:7` in zellij, `42` in wezterm).
  */
 export function createSurface(name: string): string {
   const backend = getMuxBackend();
 
-  if (backend === "cmux" && cmuxSubagentPane) {
-    // Verify the pane still exists before adding a tab to it
-    try {
-      const tree = execSync(`cmux tree`, { encoding: "utf8" });
-      if (tree.includes(cmuxSubagentPane)) {
-        return createSurfaceInPane(name, cmuxSubagentPane);
-      }
-    } catch {}
-    // Pane is gone — fall through to create a new split
-    cmuxSubagentPane = null;
-  }
-
-  if (backend === "cmux") {
-    const created = createCmuxSplitSurface(name, "right", process.env.CMUX_SURFACE_ID);
-    cmuxSubagentPane = created.paneRef ?? null;
-    return created.surface;
+  if (backend === "herdr") {
+    // Column layout: first spawn splits right (creates the column), later
+    // spawns split down inside it (stacked), keeping the main pane on the left
+    // and subagents in a right-hand column — exactly like the tmux layout.
+    const { direction, anchor } = herdrColumnSelection(herdrColumnPanes);
+    const paneId = anchor
+      ? createSurfaceSplit(name, direction, anchor)
+      : createSurfaceSplit(name, direction, process.env.HERDR_PANE_ID);
+    trackHerdrColumnPane(paneId);
+    return paneId;
   }
 
   if (backend === "zellij") {
@@ -778,39 +711,33 @@ export function createSurface(name: string): string {
 
   // On tmux, target the parent pi's pane so splits follow the agent, not the user's focus.
   // See https://github.com/HazAT/pi-interactive-subagents/issues/12
-  const fromSurface = backend === "tmux" ? process.env.TMUX_PANE : undefined;
+  // Use tmux pane list directly to detect subagent column — avoids a race
+  // condition when multiple subagents spawn before the first split completes.
+  // Direction mapping (empirically verified):
+  //   "right" → -h → side-by-side column | "down" → -v → stacked within column
+  if (backend === "tmux") {
+    const mainPane = process.env.TMUX_PANE;
+    try {
+      const paneList = execFileSync("tmux", ["list-panes", "-F", "#{pane_id}"], { encoding: "utf8" });
+      const paneIds = paneList.trim().split("\n").filter(Boolean);
+      if (paneIds.length > 1 && mainPane) {
+        // Subagent column exists — split "down" (stacked) within it
+        const subPane = paneIds.find((id: string) => id !== mainPane);
+        if (subPane) {
+          return createSurfaceSplit(name, "down", subPane.trim());
+        }
+      }
+    } catch {}
+    // First subagent — create side-by-side column from main pi ("right" = -h)
+    return createSurfaceSplit(name, "right", mainPane);
+  }
+  const fromSurface = backend === "wezterm" ? process.env.WEZTERM_PANE : undefined;
   return createSurfaceSplit(name, "right", fromSurface);
 }
 
 /**
- * Create a new surface (tab) in an existing cmux pane.
- */
-function createSurfaceInPane(name: string, pane: string): string {
-  const identifySnapshot = captureCmuxIdentifySnapshot();
-  const focusSnapshot = identifySnapshot.focused;
-  const callerSnapshot = identifySnapshot.caller;
-  let child: CmuxCreatedSurface | null = null;
-
-  try {
-    const output = execFileSync("cmux", ["new-surface", "--pane", pane], { encoding: "utf8" }).trim();
-    child = parseCmuxCreatedSurface(output, "new-surface");
-    child.paneRef ??= pane;
-    renameCmuxSurface(child.surface, name);
-    return child.surface;
-  } finally {
-    if (child) {
-      restoreCmuxFocusIfLaunchSurfaceFocused(focusSnapshot, child, {
-        callerSnapshot,
-      });
-    } else {
-      restoreCmuxFocusSnapshot(focusSnapshot);
-    }
-  }
-}
-
-/**
  * Create a new split in the given direction from an optional source pane.
- * Returns an identifier (`surface:42` in cmux, `%12` in tmux, `pane:7` in zellij, `42` in wezterm).
+ * Returns an identifier (`w1:p2` in herdr, `%12` in tmux, `pane:7` in zellij, `42` in wezterm).
  */
 export function createSurfaceSplit(
   name: string,
@@ -819,8 +746,25 @@ export function createSurfaceSplit(
 ): string {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    return createCmuxSplitSurface(name, direction, fromSurface).surface;
+  if (backend === "herdr") {
+    const args = ["pane", "split"];
+    if (fromSurface) {
+      args.push(fromSurface);
+    } else {
+      args.push("--current");
+    }
+    // herdr splits are only right|down; map up/left to their closest packing.
+    args.push("--direction", direction === "left" || direction === "right" ? "right" : "down");
+    args.push("--cwd", process.cwd());
+    args.push("--no-focus");
+    const raw = execFileSync("herdr", args, { encoding: "utf8" }).trim();
+    const paneId = parseHerdrPaneId(raw, "pane split");
+    try {
+      execFileSync("herdr", ["pane", "rename", paneId, name], { encoding: "utf8" });
+    } catch {
+      // Optional — pane rename is cosmetic.
+    }
+    return paneId;
   }
 
   if (backend === "tmux") {
@@ -910,12 +854,14 @@ export function createSurfaceSplit(
 export function renameCurrentTab(title: string): void {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    const surfaceId = process.env.CMUX_SURFACE_ID;
-    if (!surfaceId) throw new Error("CMUX_SURFACE_ID not set");
-    execSync(`cmux rename-tab --surface ${shellEscape(surfaceId)} ${shellEscape(title)}`, {
-      encoding: "utf8",
-    });
+  if (backend === "herdr") {
+    const tabId = process.env.HERDR_TAB_ID;
+    if (!tabId) throw new Error("HERDR_TAB_ID not set");
+    try {
+      execFileSync("herdr", ["tab", "rename", tabId, title], { encoding: "utf8" });
+    } catch {
+      // Optional — tab title is cosmetic.
+    }
     return;
   }
 
@@ -958,10 +904,9 @@ export function renameCurrentTab(title: string): void {
 export function renameWorkspace(title: string): void {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    execSync(`cmux workspace-action --action rename --title ${shellEscape(title)}`, {
-      encoding: "utf8",
-    });
+  if (backend === "herdr") {
+    // No-op. Renaming a workspace renames the user's session label and affects
+    // any session-scoped state; renameCurrentTab is sufficient for user-visible naming.
     return;
   }
 
@@ -1011,10 +956,8 @@ export function renameWorkspace(title: string): void {
 export function sendCommand(surface: string, command: string): void {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    execSync(`cmux send --surface ${shellEscape(surface)} ${shellEscape(command + "\n")}`, {
-      encoding: "utf8",
-    });
+  if (backend === "herdr") {
+    execFileSync("herdr", ["pane", "run", surface, command], { encoding: "utf8" });
     return;
   }
 
@@ -1043,8 +986,8 @@ export function sendCommand(surface: string, command: string): void {
 export function sendEscape(surface: string): void {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    execFileSync("cmux", ["send", "--surface", surface, "\u001b"], { encoding: "utf8" });
+  if (backend === "herdr") {
+    execFileSync("herdr", ["pane", "send-keys", surface, "esc"], { encoding: "utf8" });
     return;
   }
 
@@ -1107,10 +1050,13 @@ export function sendLongCommand(
 export function readScreen(surface: string, lines = 50): string {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    return execSync(`cmux read-screen --surface ${shellEscape(surface)} --lines ${lines}`, {
-      encoding: "utf8",
-    });
+  if (backend === "herdr") {
+    const raw = execFileSync(
+      "herdr",
+      ["pane", "read", surface, "--source", "recent-unwrapped", "--lines", String(Math.max(1, lines))],
+      { encoding: "utf8" },
+    );
+    return tailLines(raw, lines);
   }
 
   if (backend === "tmux") {
@@ -1150,13 +1096,13 @@ export function readScreen(surface: string, lines = 50): string {
 export async function readScreenAsync(surface: string, lines = 50): Promise<string> {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
+  if (backend === "herdr") {
     const { stdout } = await execFileAsync(
-      "cmux",
-      ["read-screen", "--surface", surface, "--lines", String(lines)],
+      "herdr",
+      ["pane", "read", surface, "--source", "recent-unwrapped", "--lines", String(Math.max(1, lines))],
       { encoding: "utf8" },
     );
-    return stdout;
+    return tailLines(stdout, lines);
   }
 
   if (backend === "tmux") {
@@ -1193,10 +1139,9 @@ export async function readScreenAsync(surface: string, lines = 50): Promise<stri
 export function closeSurface(surface: string): void {
   const backend = requireMuxBackend();
 
-  if (backend === "cmux") {
-    execSync(`cmux close-surface --surface ${shellEscape(surface)}`, {
-      encoding: "utf8",
-    });
+  if (backend === "herdr") {
+    forgetHerdrColumnPane(surface);
+    execFileSync("herdr", ["pane", "close", surface], { encoding: "utf8" });
     return;
   }
 
