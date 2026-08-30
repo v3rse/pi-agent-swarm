@@ -34,7 +34,9 @@ subagent({ name: "Scout: DB", agent: "scout", task: "Map database schema" });
 pi install git:github.com/v3rse/pi-agent-swarm
 ```
 
-> For the original upstream (without the herdr port or model-agnostic agents):
+That installs the `pi-agent-swarm` **extension** and the bundled **`deep-research` skill** automatically. The only optional extra is the third-party `chrome-cdp` skill for visual testing — see [Installing the optional skills](#installing-the-optional-skills).
+
+> For the original upstream (without the herdr port):
 > `pi install git:github.com/HazAT/pi-interactive-subagents`
 
 Supported multiplexers:
@@ -104,26 +106,20 @@ The bundled agents ship with **no `model`/`thinking` frontmatter** — so by def
 
 The `visual-tester` and `researcher` agents are most useful with two optional skills. Agent-frontmatter skills are loaded by name when present and skipped when not — the agents function either way.
 
-The easiest way is a **single command** from the repo:
+- **deep-research** is **already installed by `pi install`** (it's bundled in the package). Nothing to do.
+- **chrome-cdp** is a third-party MIT skill (`pasky/chrome-cdp-skill`); install it on demand:
 
 ```bash
-npm run skills:install
+npm run skills:install   # installs chrome-cdp (and re-copies deep-research if you run outside pi)
 ```
 
-That installs:
-
-1. **deep-research** — the dependency-free, agent-native skill published in this repo at `skills/deep-research/SKILL.md` (uses `web_search`/`fetch_content`/`code_search`, no external API key).
-2. **chrome-cdp** — the MIT [`pasky/chrome-cdp-skill`](https://github.com/pasky/chrome-cdp-skill) via the skills CLI (best-effort; optional).
-
-> Avoid third-party deep-research skills that require an external API key (e.g. `24601/agent-deep-research` uses the Gemini Interactions API). The published copy here is dependency-free.
-
-Manual equivalent (if you prefer not to use the script):
+or equivalently:
 
 ```bash
-mkdir -p ~/.pi/agent/skills/deep-research
-cp skills/deep-research/SKILL.md ~/.pi/agent/skills/deep-research/SKILL.md
 npx skills add pasky/chrome-cdp-skill --skill chrome-cdp -g
 ```
+
+> Avoid third-party deep-research skills that require an external API key (e.g. `24601/agent-deep-research` uses the Gemini Interactions API). The bundled copy here is dependency-free.
 
 #### Overriding models in one place (`subagents.agentOverrides`)
 
