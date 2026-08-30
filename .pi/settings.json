@@ -1,7 +1,7 @@
 {
   "packages": [
     {
-      "source": "git:github.com/HazAT/pi-interactive-subagents",
+      "source": "git:github.com/v3rse/pi-agent-swarm",
       "extensions": [],
       "skills": []
     }

@@ -1,4 +1,9 @@
-# pi-interactive-subagents
+# pi-agent-swarm
+
+> **Fork / port of [`HazAT/pi-interactive-subagents`](https://github.com/HazAT/pi-interactive-subagents).**
+> The mux backend has been migrated to be **herdr-first** (with tmux, zellij, and WezTerm still supported), and the bundled agents are now **model-agnostic** — they inherit the model of the dispatching session instead of hardcoding a specific provider/model.
+>
+> Original project & copyright: **HazAT** (MIT). This port: **v3rse**.
 
 Async subagents for [pi](https://github.com/badlogic/pi-mono) — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. **Fully non-blocking** — the main agent keeps working while subagents run in the background.
 
@@ -26,12 +31,15 @@ subagent({ name: "Scout: DB", agent: "scout", task: "Map database schema" });
 ## Install
 
 ```bash
-pi install git:github.com/HazAT/pi-interactive-subagents
+pi install git:github.com/v3rse/pi-agent-swarm
 ```
+
+> For the original upstream (without the herdr port or model-agnostic agents):
+> `pi install git:github.com/HazAT/pi-interactive-subagents`
 
 Supported multiplexers:
 
-- [cmux](https://github.com/manaflow-ai/cmux)
+- [herdr](https://herdr.dev/) (agent-native terminal multiplexer)
 - [tmux](https://github.com/tmux/tmux)
 - [zellij](https://zellij.dev)
 - [WezTerm](https://wezfurlong.org/wezterm/) (terminal emulator with built-in multiplexing)
@@ -39,7 +47,7 @@ Supported multiplexers:
 Start pi inside one of them:
 
 ```bash
-cmux pi
+herdr   # then run: pi
 # or
 tmux new -A -s pi 'pi'
 # or
@@ -48,7 +56,7 @@ zellij --session pi   # then run: pi
 # just run pi inside WezTerm — no wrapper needed
 ```
 
-Optional: set `PI_SUBAGENT_MUX=cmux|tmux|zellij|wezterm` to force a specific backend.
+Optional: set `PI_SUBAGENT_MUX=herdr|tmux|zellij|wezterm` to force a specific backend.
 
 If your shell startup is slow and subagent commands sometimes get dropped before the prompt is ready, set `PI_SUBAGENT_SHELL_READY_DELAY_MS` to a higher value (defaults to `500`):
 
@@ -56,7 +64,7 @@ If your shell startup is slow and subagent commands sometimes get dropped before
 export PI_SUBAGENT_SHELL_READY_DELAY_MS=2500
 ```
 
-Subagent panes are created without stealing keyboard focus (cmux, tmux). Launch commands target child surfaces by explicit ID, so focus and command delivery are independent. Note: the `interactive` option controls parent status notifications, not terminal focus.
+Subagent panes are created without stealing keyboard focus (herdr, tmux). Launch commands target child surfaces by explicit ID, so focus and command delivery are independent. Note: the `interactive` option controls parent status notifications, not terminal focus.
 
 ## What's Included
 
@@ -79,13 +87,15 @@ Subagent panes are created without stealing keyboard focus (cmux, tmux). Launch 
 
 ### Bundled Agents
 
-| Agent             | Model                  | Role                                                                                     |
-| ----------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
-| **planner**       | Opus (medium thinking) | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
-| **scout**         | Haiku                  | Fast codebase reconnaissance — maps files, patterns, conventions                         |
-| **worker**        | Sonnet                 | Implements tasks from todos — writes code, runs tests, makes polished commits            |
-| **reviewer**      | Opus (medium thinking) | Reviews code for bugs, security issues, correctness                                      |
-| **visual-tester** | Sonnet                 | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
+Agent definitions are **model-agnostic** — the bundled agents omit a `model`/`thinking` frontmatter, so each subagent inherits the model of the dispatching session by default. Set your own model per agent (frontmatter, `settings.json` overrides, or the `model` spawn parameter) if you want a dedicated model per role.
+
+| Agent             | Role                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| **planner**       | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
+| **scout**         | Fast codebase reconnaissance — maps files, patterns, conventions                         |
+| **worker**        | Implements tasks from todos — writes code, runs tests, makes polished commits            |
+| **reviewer**      | Reviews code for bugs, security issues, correctness                                      |
+| **visual-tester** | Visual QA via Chrome CDP — screenshots, responsive testing, interaction testing          |
 
 Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global** (`~/.pi/agent/agents/`) > **package-bundled**. Override any bundled agent by placing your own version in the higher-priority location.
 
@@ -468,13 +478,13 @@ Every sub-agent session displays a compact tools widget showing available and de
 
 - [pi](https://github.com/badlogic/pi-mono) — the coding agent
 - One supported multiplexer:
-  - [cmux](https://github.com/manaflow-ai/cmux)
+  - [herdr](https://herdr.dev/)
   - [tmux](https://github.com/tmux/tmux)
   - [zellij](https://zellij.dev)
   - [WezTerm](https://wezfurlong.org/wezterm/)
 
 ```bash
-cmux pi
+herdr   # then run: pi
 # or
 tmux new -A -s pi 'pi'
 # or
@@ -486,7 +496,7 @@ zellij --session pi   # then run: pi
 Optional backend override:
 
 ```bash
-export PI_SUBAGENT_MUX=cmux   # or tmux, zellij, wezterm
+export PI_SUBAGENT_MUX=herdr   # or tmux, zellij, wezterm
 ```
 
 ---

@@ -1,16 +1,20 @@
 {
-  "name": "pi-interactive-subagents",
+  "name": "pi-agent-swarm",
   "version": "3.7.2",
-  "description": "Interactive subagents for pi - spawn, orchestrate, and manage sub-agent sessions in cmux/tmux/zellij terminals",
+  "description": "Interactive subagents for pi - spawn, orchestrate, and manage sub-agent sessions across herdr/tmux/zellij/wezterm terminals. A herdr-first port of HazAT/pi-interactive-subagents. Model-agnostic: subagents inherit the dispatching session's model unless you set one.",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "subagents",
+    "multiplexer",
+    "herdr"
   ],
   "license": "MIT",
-  "author": "HazAT",
+  "author": "HazAT (original) - v3rse (herdr port + maintenance)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HazAT/pi-interactive-subagents"
+    "url": "https://github.com/v3rse/pi-agent-swarm"
   },
+  "homepage": "https://github.com/v3rse/pi-agent-swarm#readme",
   "type": "module",
   "scripts": {
     "test": "node --test test/test.ts",
