@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-swarm",
-  "version": "3.7.2",
+  "version": "1.0.0",
   "description": "Interactive subagents for pi - spawn, orchestrate, and manage sub-agent sessions across herdr/tmux/zellij/wezterm terminals. A herdr-first port of HazAT/pi-interactive-subagents. Model-agnostic: subagents inherit the dispatching session's model unless you set one.",
   "keywords": [
     "pi-package",
