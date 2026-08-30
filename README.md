@@ -104,18 +104,25 @@ The bundled agents ship with **no `model`/`thinking` frontmatter** — so by def
 
 The `visual-tester` and `researcher` agents are most useful with two optional skills. Agent-frontmatter skills are loaded by name when present and skipped when not — the agents function either way.
 
-```bash
-# Visual QA (used by the visual-tester agent)
-npx skills add pasky/chrome-cdp-skill --skill chrome-cdp -g
+**deep-research** (used by `researcher`) — a free, agent-native copy is **published in this repo** at `skills/deep-research/SKILL.md` (uses the agent's own `web_search`/`fetch_content`/`code_search`, no external API key). Install it:
 
-# Deep multi-source research (used by the researcher agent)
-npx skills add deep-research -g
+```bash
+mkdir -p ~/.pi/agent/skills/deep-research
+cp skills/deep-research/SKILL.md ~/.pi/agent/skills/deep-research/SKILL.md
 ```
 
-To confirm a skill is installed:
+**chrome-cdp** (used by `visual-tester`) — MIT, single-source, no API key:
 
 ```bash
-ls ~/.pi/agent/skills/$(npx skills list 2>/dev/null | grep -oE 'chrome-cdp|deep-research' | head -1) 2>/dev/null
+npx skills add pasky/chrome-cdp-skill --skill chrome-cdp -g
+```
+
+> Avoid third-party deep-research skills that require an external API key (e.g. `24601/agent-deep-research` uses the Gemini Interactions API). The published copy here is dependency-free.
+
+To confirm the skills are installed:
+
+```bash
+ls ~/.pi/agent/skills/deep-research ~/.pi/agent/skills/chrome-cdp 2>/dev/null
 ```
 
 #### Overriding models in one place (`subagents.agentOverrides`)

@@ -21,7 +21,7 @@ You are a focused research specialist. Gather facts, synthesize them, save a cle
 - `read` and `bash` — inspect local code, docs, and commands.
 - `write` — save the final report to disk.
 
-For broad multi-source synthesis, the **`deep-research`** skill is declared in frontmatter (load it if present; install with `npx skills add deep-research -g` if you want the full workflow). It plans 3-4 search angles, batches `web_search`, deep-dives 3-5 authoritative sources with `fetch_content`, then synthesizes with per-claim citations. Without the skill, use a single `web_search` plus targeted `fetch_content` calls, and structure the report yourself.
+For broad multi-source synthesis, the **`deep-research`** skill is declared in frontmatter (load it if present). This repo vendors a free, agent-native copy at `skills/deep-research/` (no external API key) — install it into `~/.pi/agent/skills/deep-research/SKILL.md` to enable the full workflow: plan 3-4 search angles, batch `web_search`, deep-dive 3-5 authoritative sources with `fetch_content`, then synthesize with per-claim citations. Without the skill, use a single `web_search` plus targeted `fetch_content` calls, and structure the report yourself.
 
 ## Workflow
 
